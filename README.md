@@ -2,7 +2,9 @@
 
 Kelas untuk mengonversi elemen HTML berdasarkan aturan (`selector` atau `tag`) yang Anda definisikan. Setiap aturan memiliki fungsi `render` yang dapat mengakses atribut, elemen anak, dan elemen terkait, lalu mengganti, menghapus, atau mengubahnya.
 
-Hasil konversi **dikembalikan sebagai string HTML**. DOM asli tidak berubah kecuali Anda menerapkannya (lihat [Menerapkan hasil ke halaman](#menerapkan-hasil-ke-halaman)).
+`root` boleh berupa id, kelas, atau selector lain, dan boleh cocok dengan **banyak elemen**. Setiap root diproses secara terpisah.
+
+Konversi bekerja pada salinan DOM. Halaman asli hanya berubah jika Anda memanggil `apply()`.
 
 ---
 
@@ -10,14 +12,15 @@ Hasil konversi **dikembalikan sebagai string HTML**. DOM asli tidak berubah kecu
 
 1. [Mulai cepat](#mulai-cepat)
 2. [Konfigurasi](#konfigurasi)
-3. [Fungsi `render`](#fungsi-render)
-4. [Nilai `return`](#nilai-return)
-5. [Objek `ctx`](#objek-ctx)
-6. [Contoh penggunaan](#contoh-penggunaan)
-7. [Menerapkan hasil ke halaman](#menerapkan-hasil-ke-halaman)
-8. [Cara kerja dan aturan penting](#cara-kerja-dan-aturan-penting)
-9. [Pemecahan masalah](#pemecahan-masalah)
-10. [Keamanan](#keamanan)
+3. [Banyak root](#banyak-root)
+4. [Method kelas](#method-kelas)
+5. [Fungsi `render`](#fungsi-render)
+6. [Nilai `return`](#nilai-return)
+7. [Objek `ctx`](#objek-ctx)
+8. [Contoh penggunaan](#contoh-penggunaan)
+9. [Cara kerja dan aturan penting](#cara-kerja-dan-aturan-penting)
+10. [Pemecahan masalah](#pemecahan-masalah)
+11. [Keamanan](#keamanan)
 
 ---
 
@@ -26,10 +29,13 @@ Hasil konversi **dikembalikan sebagai string HTML**. DOM asli tidak berubah kecu
 HTML input:
 
 ```html
-<div id="root">
+<div class="konten">
     <p data-align="center" title="Info">
         Halo <a href="https://example.com">dunia</a>
     </p>
+</div>
+<div class="konten">
+    <p>Paragraf kedua</p>
 </div>
 ```
 
@@ -37,7 +43,7 @@ Konfigurasi dan pemakaian:
 
 ```javascript
 const CONVERTER = {
-    root: "#root",
+    root: ".konten",
     elements: [
         {
             tag: "p",
@@ -56,12 +62,12 @@ const CONVERTER = {
 };
 
 const converter = new HTMLElementConverter(CONVERTER);
-const html = converter.convert();
 
-console.log(html);
+// Terapkan ke semua elemen .konten di halaman
+converter.apply();
 ```
 
-Hasil:
+Hasil pada elemen `.konten` pertama:
 
 ```html
 <p class="mb-0 text-center">
@@ -75,25 +81,92 @@ Hasil:
 
 ```javascript
 new HTMLElementConverter({
-    root: "#root",
+    root: ".konten",
     elements: [ /* daftar aturan */ ]
 });
 ```
 
-| Properti   | Tipe     | Default  | Keterangan                                     |
-| ---------- | -------- | -------- | ---------------------------------------------- |
-| `root`     | `string` | `"body"` | CSS selector elemen yang akan dikonversi.      |
-| `elements` | `Array`  | `[]`     | Daftar aturan konversi.                        |
+| Properti   | Tipe     | Default  | Keterangan                                                        |
+| ---------- | -------- | -------- | ----------------------------------------------------------------- |
+| `root`     | `string` | `"body"` | CSS selector root. Boleh id, kelas, atau cocok dengan banyak elemen. |
+| `elements` | `Array`  | `[]`     | Daftar aturan konversi.                                           |
 
 ### Aturan (`elements`)
 
-| Properti   | Tipe       | Wajib | Keterangan                                                       |
-| ---------- | ---------- | ----- | ---------------------------------------------------------------- |
-| `selector` | `string`   | salah satu | CSS selector penuh, mis. `a[href^="http"]`, `div.gallery`.  |
-| `tag`      | `string`   | salah satu | Nama tag, mis. `"p"`. Dipakai jika `selector` tidak ada.    |
-| `render`   | `function` | ya    | Fungsi yang menentukan hasil konversi.                           |
+| Properti   | Tipe       | Wajib      | Keterangan                                                    |
+| ---------- | ---------- | ---------- | ------------------------------------------------------------- |
+| `selector` | `string`   | salah satu | CSS selector penuh, mis. `a[href^="http"]`, `div.gallery`.    |
+| `tag`      | `string`   | salah satu | Nama tag, mis. `"p"`. Dipakai jika `selector` tidak ada.      |
+| `render`   | `function` | ya         | Fungsi yang menentukan hasil konversi.                        |
 
 Aturan tanpa `selector`/`tag` atau tanpa fungsi `render` akan dilewati.
+
+---
+
+## Banyak root
+
+Jika `root` berupa kelas (atau selector lain) yang cocok dengan beberapa elemen, semuanya diproses, masing-masing pada salinannya sendiri.
+
+```javascript
+const converter = new HTMLElementConverter({ root: ".konten", elements: [...] });
+
+// 1. Terapkan ke semua root di halaman
+converter.apply();
+
+// 2. Ambil hasil per root tanpa mengubah halaman
+converter.convertAll().forEach(({ element, html }, i) => {
+    console.log(`Root ${i + 1}:`, element, html);
+});
+
+// 3. Satu string gabungan (isi semua root disambung tanpa pembatas)
+const html = converter.convert();
+```
+
+Aturan yang berlaku:
+
+- **Urutan.** Root diproses sesuai urutan kemunculan di dokumen.
+- **Root bersarang.** Jika `.konten` berada di dalam `.konten` lain, hanya yang terluar diproses agar tidak terjadi konversi ganda.
+- **Hanya isi root yang dikonversi.** Elemen root itu sendiri tidak ikut diganti, karena `apply()` menulis ke `innerHTML` root.
+- **`convert()` menggabungkan hasil.** Untuk hasil yang terpisah per root, pakai `convertAll()`.
+
+---
+
+## Method kelas
+
+### Root
+
+| Method                | Mengembalikan | Keterangan                                                           |
+| --------------------- | ------------- | -------------------------------------------------------------------- |
+| `getRoots()`          | `Element[]`   | Semua root yang cocok, tanpa root bersarang.                         |
+| `getRoot()`           | `Element\|null` | Root pertama saja (kompatibel dengan versi lama).                  |
+
+### Konversi
+
+| Method                  | Mengembalikan                     | Keterangan                                                    |
+| ----------------------- | --------------------------------- | ------------------------------------------------------------- |
+| `convertRoot(root)`     | `string`                          | Konversi satu root, hasil berupa string HTML.                 |
+| `convertAll(roots?)`    | `Array<{ element, html }>`        | Konversi semua root. Default: `getRoots()`.                   |
+| `convert()`             | `string`                          | Hasil semua root digabung menjadi satu string.                |
+| `apply()`               | `Element[]`                       | Tulis hasil ke `innerHTML` tiap root di halaman.              |
+
+### Perubahan perilaku dari versi lama
+
+- `convertAll()` kini mengembalikan **array** `[{ element, html }]`, bukan string. Kode yang mengharapkan string perlu memakai `convert()` atau `convertRoot(root)`.
+- `convert()` mengembalikan gabungan semua root, bukan hanya root pertama.
+
+### Method pendukung
+
+| Method                                  | Keterangan                                                      |
+| --------------------------------------- | --------------------------------------------------------------- |
+| `getElements()`                         | Daftar aturan.                                                  |
+| `getSelector(config)`                   | `selector` aturan, atau `tag` jika `selector` tidak ada.        |
+| `toNodes(content)`                      | Ubah `Node`, string, array, atau falsy menjadi array `Node`.    |
+| `replaceTarget(target, content)`        | Ganti `target` dengan konten.                                   |
+| `insertAround(target, content, pos)`    | Sisipkan konten `"before"` atau `"after"` target.               |
+| `createContext(element)`                | Membuat objek `ctx` untuk `render`.                             |
+| `renderElement(element, config)`        | Menjalankan `render` dan menerapkan hasilnya.                   |
+| `convertElement(element, config)`       | Alias `renderElement`.                                          |
+| `toHTML(element)`                       | `innerHTML` sebuah elemen.                                      |
 
 ---
 
@@ -141,33 +214,33 @@ Fungsi lama berbentuk `(text) => ...` tetap berjalan karena dua argumen pertama 
 
 ### Elemen terkait
 
-| Properti / method     | Keterangan                          |
-| --------------------- | ----------------------------------- |
-| `ctx.parent`          | Elemen induk.                       |
-| `ctx.next`            | Saudara berikutnya.                 |
-| `ctx.prev`            | Saudara sebelumnya.                 |
-| `ctx.closest(sel)`    | Leluhur terdekat yang cocok.        |
-| `ctx.query(sel)`      | Elemen pertama di dalam yang cocok. |
+| Properti / method     | Keterangan                                |
+| --------------------- | ----------------------------------------- |
+| `ctx.parent`          | Elemen induk.                             |
+| `ctx.next`            | Saudara berikutnya.                       |
+| `ctx.prev`            | Saudara sebelumnya.                       |
+| `ctx.closest(sel)`    | Leluhur terdekat yang cocok.              |
+| `ctx.query(sel)`      | Elemen pertama di dalam yang cocok.       |
 | `ctx.queryAll(sel)`   | Semua elemen di dalam yang cocok (array). |
 
 ### Atribut
 
-| Method                     | Keterangan                                       |
-| -------------------------- | ------------------------------------------------ |
-| `ctx.getAttr(name, fallback)` | Ambil nilai atribut, `fallback` (default `null`) jika tidak ada. |
-| `ctx.hasAttr(name)`        | Cek atribut ada atau tidak.                      |
-| `ctx.setAttr(name, value)` | Ubah atribut elemen ini.                         |
-| `ctx.removeAttr(name)`     | Hapus atribut elemen ini.                        |
+| Method                        | Keterangan                                                        |
+| ----------------------------- | ----------------------------------------------------------------- |
+| `ctx.getAttr(name, fallback)` | Ambil nilai atribut, `fallback` (default `null`) jika tidak ada.  |
+| `ctx.hasAttr(name)`           | Cek atribut ada atau tidak.                                       |
+| `ctx.setAttr(name, value)`    | Ubah atribut elemen ini.                                          |
+| `ctx.removeAttr(name)`        | Hapus atribut elemen ini.                                         |
 
 ### Memodifikasi elemen terkait
 
-| Method                      | Keterangan                                          |
-| --------------------------- | --------------------------------------------------- |
+| Method                        | Keterangan                                           |
+| ----------------------------- | ---------------------------------------------------- |
 | `ctx.replace(target, konten)` | Ganti `target` (diri sendiri, anak, induk, saudara). |
-| `ctx.remove(target)`        | Hapus `target`.                                     |
-| `ctx.unwrap(target)`        | Buang pembungkus, sisakan isinya.                   |
-| `ctx.before(target, konten)` | Sisipkan konten sebelum `target`.                  |
-| `ctx.after(target, konten)` | Sisipkan konten sesudah `target`.                   |
+| `ctx.remove(target)`          | Hapus `target`.                                      |
+| `ctx.unwrap(target)`          | Buang pembungkus, sisakan isinya.                    |
+| `ctx.before(target, konten)`  | Sisipkan konten sebelum `target`.                    |
+| `ctx.after(target, konten)`   | Sisipkan konten sesudah `target`.                    |
 
 `konten` dapat berupa `Node`, string HTML, array, atau `null`/`false` (hapus).
 
@@ -300,64 +373,51 @@ Letakkan aturan penghapusan **paling atas** agar menang atas aturan lain.
 }
 ```
 
----
-
-## Menerapkan hasil ke halaman
-
-`convert()` hanya mengembalikan string. Terapkan sendiri:
+### 9. Memproses tiap root secara terpisah
 
 ```javascript
-const converter = new HTMLElementConverter(CONVERTER);
-const html = converter.convert();
+const converter = new HTMLElementConverter({
+    root: ".artikel",
+    elements: [ /* ... */ ]
+});
 
-document.querySelector("#root").innerHTML = html;
+converter.convertAll().forEach(({ element, html }) => {
+    // Contoh: simpan hasil per artikel
+    element.dataset.converted = "true";
+    element.innerHTML = html;
+});
 ```
 
-Atau tambahkan method berikut ke dalam class:
-
-```javascript
-/** Terapkan hasil konversi ke elemen root di halaman. */
-apply() {
-    const root = this.getRoot();
-
-    if (!root) {
-        return null;
-    }
-
-    root.innerHTML = this.convertAll(root);
-    return root;
-}
-```
-
-```javascript
-new HTMLElementConverter(CONVERTER).apply();
-```
-
-Mengatur `innerHTML` membuang event listener yang menempel pada elemen lama. Pasang ulang listener setelah `apply()` bila diperlukan.
+Hasilnya setara dengan `converter.apply()` ditambah penanda `data-converted`.
 
 ---
 
 ## Cara kerja dan aturan penting
 
-1. **Bekerja pada salinan.** Root disalin dengan `cloneNode(true)`, sehingga DOM asli tidak berubah.
-2. **Elemen terdalam diproses lebih dulu.** Saat `render` elemen luar berjalan, `html` miliknya sudah berisi hasil konversi anak-anaknya.
-3. **Aturan pertama yang cocok yang dipakai.** Jika sebuah elemen cocok dengan beberapa aturan, hanya aturan paling atas yang berjalan. Urutan `elements` menentukan prioritas.
-4. **Hasil `render` tidak diproses ulang.** Node baru tidak dikonversi lagi, sehingga tidak terjadi loop tak terbatas. Jalankan konversi dua kali jika memang diperlukan.
-5. **Elemen yang terlepas dilewati.** Jika induk atau elemen lain diganti di dalam `render`, elemen yang sudah tidak ada di container otomatis dilewati.
-6. **Elemen baru dibuat dari nol.** Atribut asli (`id`, `class`, `style`, dan sebagainya) tidak terbawa kecuali Anda menyalinnya lewat `ctx.attrs`.
+1. **Bekerja pada salinan.** Setiap root disalin dengan `cloneNode(true)`, sehingga DOM asli tidak berubah sampai `apply()` dipanggil.
+2. **Setiap root diproses mandiri.** Aturan dijalankan per root, jadi `ctx.parent`, `ctx.closest()`, dan penggantian elemen tidak melewati batas root.
+3. **Elemen terdalam diproses lebih dulu.** Saat `render` elemen luar berjalan, `html` miliknya sudah berisi hasil konversi anak-anaknya.
+4. **Aturan pertama yang cocok yang dipakai.** Jika sebuah elemen cocok dengan beberapa aturan, hanya aturan paling atas yang berjalan. Urutan `elements` menentukan prioritas.
+5. **Hasil `render` tidak diproses ulang.** Node baru tidak dikonversi lagi, sehingga tidak terjadi loop tak terbatas. Jalankan konversi dua kali jika memang diperlukan.
+6. **Elemen yang terlepas dilewati.** Jika induk atau elemen lain diganti di dalam `render`, elemen yang sudah tidak ada di container otomatis dilewati.
+7. **Elemen baru dibuat dari nol.** Atribut asli (`id`, `class`, `style`, dan sebagainya) tidak terbawa kecuali Anda menyalinnya lewat `ctx.attrs`.
+8. **`apply()` membuang event listener.** Mengatur `innerHTML` mengganti semua elemen di dalam root. Pasang ulang listener setelah `apply()` bila diperlukan.
 
 ---
 
 ## Pemecahan masalah
 
-| Gejala                                   | Kemungkinan penyebab dan solusi                                                                                          |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| `convert()` mengembalikan string kosong  | `root` tidak ditemukan. Cek `console.log(converter.getRoot())`.                                                          |
-| Halaman tidak berubah                    | Hasil hanya dikembalikan sebagai string. Gunakan `apply()` atau atur `innerHTML` sendiri.                                |
-| Aturan tidak berjalan                    | Selector tidak cocok, atau elemen sudah cocok dengan aturan lain yang lebih atas. Periksa urutan dan selector.           |
-| `<p class="hidden">` tidak terhapus      | Aturan `p` berada di atas aturan `.hidden`. Pindahkan aturan hapus ke paling atas.                                       |
-| `TypeError: Konten harus berupa Node...` | `render` mengembalikan tipe yang tidak didukung (mis. object biasa). Kembalikan `Node`, string, array, `false`, atau `null`. |
-| Atribut hilang pada hasil                | Elemen baru dibuat dari nol. Salin atribut lewat `ctx.attrs`.                                                            |
+| Gejala                                    | Kemungkinan penyebab dan solusi                                                                                                   |
+| ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `convert()` mengembalikan string kosong   | Tidak ada root yang cocok. Cek `console.log(converter.getRoots())`.                                                               |
+| Hanya sebagian root yang berubah          | Root bersarang dilewati, hanya yang terluar diproses. Cek `getRoots()` untuk melihat root yang benar-benar dipakai.               |
+| Hasil `convert()` menyatu                 | `convert()` menyambung isi semua root tanpa pembatas. Pakai `convertAll()` untuk hasil per root.                                  |
+| `convertAll()` bukan string               | Sejak dukungan banyak root, nilainya array `[{ element, html }]`. Pakai `convert()` atau `convertRoot(root)` untuk string.        |
+| Halaman tidak berubah                     | Hasil hanya dikembalikan sebagai string. Panggil `apply()` atau atur `innerHTML` sendiri.                                         |
+| Aturan tidak berjalan                     | Selector tidak cocok, atau elemen sudah cocok dengan aturan lain yang lebih atas. Periksa urutan dan selector.                    |
+| `<p class="hidden">` tidak terhapus       | Aturan `p` berada di atas aturan `.hidden`. Pindahkan aturan hapus ke paling atas.                                                |
+| `TypeError: Konten harus berupa Node...`  | `render` mengembalikan tipe yang tidak didukung (mis. object biasa). Kembalikan `Node`, string, array, `false`, atau `null`.      |
+| Atribut hilang pada hasil                 | Elemen baru dibuat dari nol. Salin atribut lewat `ctx.attrs`.                                                                     |
 
 Untuk memeriksa aturan mana yang berjalan, tambahkan log sementara:
 
